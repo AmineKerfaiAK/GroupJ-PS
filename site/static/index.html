@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streaming videos lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand" data-tip="Blue is the datacenter. Red is a cache. Green is an endpoint. Purple is a video."><span class="mark"><i></i><i></i><i></i></span><b>Streaming videos</b></div>
+  <nav class="tabs" role="tablist">
+    <button data-tab="instances" class="on">Instances</button>
+    <button data-tab="demo">Demo</button>
+    <button data-tab="stats">Statistics</button>
+    <button data-tab="code">Code</button>
+  </nav>
+  <div class="controls">
+    <select id="selInstance" aria-label="Instance" data-tip="The instance shown in every tab."></select>
+    <select id="selCode" aria-label="Code" data-tip="The program you run and look at."></select>
+    <button id="btnRun" class="run" data-tip="Run the selected program on the selected instance.">Run</button>
+    <span id="jobState" class="job"></span>
+  </div>
+</header>
+
+<main>
+<section id="instances" class="view on">
+  <aside class="side">
+    <div id="instList"></div>
+    <details id="genBox">
+      <summary>Make a new instance</summary>
+      <form id="genForm">
+        <label>Type <select name="type" id="genType">
+          <option>random</option><option>zipf</option><option>regional</option><option>dejavu</option>
+          <option>giant</option><option>knapsack_trap</option><option>edge</option></select></label>
+        <p id="typeText" class="type-text"></p>
+        <label data-tip="The file is saved as instances/generated/name.in">Name <input name="nom" placeholder="my_instance"></label>
+        <div class="two">
+          <label data-for="random zipf regional dejavu giant" data-tip="Number of videos.">Videos <input name="V" type="number" value="1000"></label>
+          <label data-for="random zipf regional dejavu giant" data-tip="Number of endpoints. An endpoint is a group of users in one place.">Endpoints <input name="E" type="number" value="100"></label>
+          <label data-for="random zipf regional dejavu giant" data-tip="Number of request lines in the file.">Requests <input name="R" type="number" value="10000"></label>
+          <label data-for="random zipf regional dejavu giant knapsack_trap" data-tip="Number of caches.">Caches <input name="C" type="number" value="20"></label>
+          <label data-for="random zipf regional dejavu giant knapsack_trap" data-tip="How many MB one cache can hold.">Cache size <input name="X" type="number" value="2000"></label>
+          <label data-for="random zipf regional dejavu giant edge" data-tip="The same seed and the same settings always give the same file. Change it to get a different file.">Seed <input name="seed" type="number" value="42"></label>
+          <label data-for="random zipf regional dejavu" data-tip="Size of the smallest video, in MB.">Min video size <input name="smin" type="number" value="1"></label>
+          <label data-for="random zipf regional dejavu" data-tip="Size of the biggest video, in MB.">Max video size <input name="smax" type="number" value="1000"></label>
+          <label data-for="random zipf regional giant" data-tip="The largest number of caches one endpoint can be connected to.">Caches per endpoint <input name="kmax" type="number" value="5"></label>
+          <label data-for="zipf regional" data-tip="How uneven the popularity is. With a higher number, a few videos get almost all the views.">Popularity <input name="a" type="number" step="0.1" value="1.0"></label>
+          <label data-for="regional" data-tip="Number of regions.">Regions <input name="G" type="number" value="4"></label>
+          <label data-for="edge">Case <select name="variante" id="genVariant"><option>single</option><option>no_cache</option>
+            <option>too_big</option><option>exact_fit</option><option>maximum</option></select></label>
+        </div>
+        <button class="primary">Make it</button>
+        <p id="genMsg" class="msg"></p>
+      </form>
+    </details>
+  </aside>
+  <div class="page">
+    <div class="head">
+      <h1 id="instName">Pick an instance</h1>
+      <button id="btnCheck" data-tip="Check that the file follows all the rules of the problem.">Check the file</button>
+    </div>
+    <p id="checkMsg" class="msg"></p>
+    <div id="strip" class="strip"></div>
+    <div class="panel net"><svg id="svgNet"></svg></div>
+    <div id="sections" class="sections"></div>
+    <div class="charts">
+      <figure><figcaption>Video sizes</figcaption><p class="fig-sub">How big the videos are. A video bigger than one cache can never be cached.</p><canvas id="chSizes"></canvas></figure>
+      <figure><figcaption>Is there enough space?</figcaption><p class="fig-sub">Size of all the videos people ask for, next to the space of all caches together.</p><canvas id="chSpace"></canvas></figure>
+      <figure><figcaption>Caches per endpoint</figcaption><p class="fig-sub">How many caches each endpoint is connected to. At 0, the endpoint always waits for the datacenter.</p><canvas id="chCpe"></canvas></figure>
+      <figure><figcaption>Endpoints per cache</figcaption><p class="fig-sub">How many endpoints use each cache. A cache shared by many endpoints is worth more.</p><canvas id="chEpc"></canvas></figure>
+      <figure><figcaption>Waiting time from the datacenter</figcaption><p class="fig-sub">How long each endpoint waits when the video comes from the datacenter.</p><canvas id="chLd"></canvas></figure>
+      <figure><figcaption>Time a cache saves</figcaption><p class="fig-sub">For each endpoint–cache connection: how much faster the cache is than the datacenter.</p><canvas id="chGain"></canvas></figure>
+      <figure><figcaption>Video popularity</figcaption><p class="fig-sub">Videos sorted from most to least watched. A steep drop means a few videos get most of the views.</p><canvas id="chPop"></canvas></figure>
+      <figure><figcaption>Requests per endpoint</figcaption><p class="fig-sub">How many requests each endpoint sends.</p><canvas id="chPe"></canvas></figure>
+    </div>
+  </div>
+</section>
+
+<section id="demo" class="view">
+  <div class="page wide">
+    <div class="head">
+      <h1>Replay</h1>
+    </div>
+    <p class="lead">Your solution is replayed one video at a time. The video that saves the most time for each MB goes first.</p>
+    <div id="demoEmpty" class="empty"></div>
+    <div id="demoBody">
+      <div class="player">
+        <button id="btnStart" aria-label="Back to the start" data-tip="Back to the start.">⏮</button>
+        <button id="btnPlay" class="primary">Play</button>
+        <select id="selSpeed" aria-label="Speed"><option value="2">Slow</option><option value="8" selected>Normal</option><option value="30">Fast</option><option value="90">Very fast</option></select>
+        <input id="slider" type="range" min="0" value="0" aria-label="Step">
+        <span id="stepCount" class="count"></span>
+      </div>
+      <div class="replay">
+        <div class="readouts">
+          <div data-tip="Your score after the videos placed so far."><b id="rScore">0</b><span>score now</span></div>
+          <div data-tip="How long a request waits on average, with the videos placed so far."><b id="rWait">0</b><span>average wait (ms)</span></div>
+          <div data-tip="Your score compared with the best possible score. 100% means you cannot do better."><b id="rPct">0</b><span>of the best possible score</span></div>
+        </div>
+        <figure class="curve"><canvas id="chReplay"></canvas></figure>
+      </div>
+      <div id="demoSmall">
+        <div class="panel net"><svg id="svgDemo"></svg></div>
+        <table class="table" id="reqTable"></table>
+      </div>
+      <h2>Caches</h2>
+      <p class="lead small">Each square is one cache. The red part shows how full it is. The yellow border marks the cache that just got a video.</p>
+      <div id="rack" class="rack"></div>
+      <h2>Last videos placed</h2>
+      <ol id="journal" class="journal"></ol>
+    </div>
+  </div>
+</section>
+
+<section id="stats" class="view">
+  <div class="page wide report">
+    <div id="statsEmpty" class="empty"></div>
+    <div id="statsBody">
+      <div class="report-head">
+        <div><h1 id="repTitle"></h1><p id="repSub" class="sub"></p></div>
+        <span id="repChip" class="chip"></span>
+      </div>
+      <div class="key">
+        <span><i class="good"></i>good</span>
+        <span><i class="fix"></i>you can improve this</span>
+        <span><i class="none"></i>you cannot change this</span>
+      </div>
+      <article class="q" id="qScore"></article>
+      <article class="q" id="qSpace"></article>
+      <article class="q" id="qWait"></article>
+      <article class="q" id="qFix"></article>
+      <article class="q" id="qTop"></article>
+    </div>
+    <h2 class="all-title">All instances</h2>
+    <table class="table" id="compareTable"></table>
+  </div>
+</section>
+
+<section id="code" class="view">
+  <div class="page wide">
+    <div class="head">
+      <h1 id="codeName">Code</h1>
+      <div class="actions">
+        <button id="btnSave" data-tip="The old version is kept in a .bak file.">Save</button>
+        <button id="btnSaveAs" data-tip="Save a copy in the versions folder with a new name.">Save as new version</button>
+        <button id="btnRunOne" class="primary" data-tip="Save, compile and run on the selected instance.">Run on this instance</button>
+        <button id="btnRunAll" data-tip="Save, compile and run on every instance.">Run on all instances</button>
+      </div>
+    </div>
+    <p id="codeMsg" class="msg"></p>
+    <div class="ide">
+      <div class="editor"><textarea id="codeArea"></textarea></div>
+      <pre id="console" data-tip="What your program prints while it runs.">Run the code to see what it prints.</pre>
+    </div>
+    <h2 id="runTitle" hidden>Results</h2>
+    <table class="table" id="resultsTable"></table>
+  </div>
+</section>
+</main>
+
+<div id="tip" class="tip" role="tooltip"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
